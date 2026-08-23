@@ -51,6 +51,9 @@ impl ExecutionContext {
         }
     }
 
+    /// Activates this context until the returned scope is dropped.
+    ///
+    /// Nested scopes must be dropped in reverse order of creation.
     pub(crate) fn activate(&self) -> ExecutionScope {
         let previous =
             ACTIVE_REGEX_CACHE.with(|active| active.borrow_mut().replace(Rc::clone(&self.cache)));

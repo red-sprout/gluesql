@@ -82,19 +82,10 @@ pub(crate) fn like_with_cache(
     case_sensitive: bool,
     cache: &mut RegexCache,
 ) -> Result<bool> {
-    let (value, pattern) = if case_sensitive {
-        (value.to_owned(), pattern.to_owned())
-    } else {
-        (value.to_lowercase(), pattern.to_lowercase())
-    };
-    let source = format!(
-        "^{}$",
-        regex::escape(&pattern).replace('%', ".*").replace('_', ".")
-    );
+    let (value, pattern) = normalize_like(value, pattern, case_sensitive);
+    let source = like_source(&pattern);
 
-    match_with_cache(&value, &source, false, cache, |_| {
-        StringExtError::UnreachablePatternParsing
-    })
+    match_with_cache(&value, &source, false, cache, unreachable_pattern_parsing)
 }
 
 pub(crate) fn regex_with_cache(
@@ -104,10 +95,7 @@ pub(crate) fn regex_with_cache(
     cache: &mut RegexCache,
 ) -> Result<bool> {
     match_with_cache(value, pattern, !case_sensitive, cache, |error| {
-        StringExtError::InvalidRegexPattern {
-            pattern: pattern.to_owned(),
-            error: error.to_string(),
-        }
+        invalid_regex_pattern(pattern, &error)
     })
 }
 
@@ -138,36 +126,47 @@ pub trait StringExt {
 
 impl StringExt for str {
     fn like(&self, pattern: &str, case_sensitive: bool) -> Result<bool> {
-        let (match_string, match_pattern) = if case_sensitive {
-            (self.to_owned(), pattern.to_owned())
-        } else {
-            let lowercase_string = self.to_lowercase();
-            let lowercase_pattern = pattern.to_lowercase();
-
-            (lowercase_string, lowercase_pattern)
-        };
+        let (match_string, match_pattern) = normalize_like(self, pattern, case_sensitive);
 
         match_with_regex(
             match_string.as_str(),
-            &format!(
-                "^{}$",
-                regex::escape(match_pattern.as_str())
-                    .replace('%', ".*")
-                    .replace('_', ".")
-            ),
+            &like_source(&match_pattern),
             false,
-            |_| StringExtError::UnreachablePatternParsing,
+            unreachable_pattern_parsing,
         )
     }
 
     fn regex(&self, pattern: &str, case_sensitive: bool) -> Result<bool> {
         match_with_regex(self, pattern, !case_sensitive, |error| {
-            StringExtError::InvalidRegexPattern {
-                pattern: pattern.to_owned(),
-                error: error.to_string(),
-            }
+            invalid_regex_pattern(pattern, &error)
         })
     }
+}
+
+fn normalize_like(value: &str, pattern: &str, case_sensitive: bool) -> (String, String) {
+    if case_sensitive {
+        (value.to_owned(), pattern.to_owned())
+    } else {
+        (value.to_lowercase(), pattern.to_lowercase())
+    }
+}
+
+fn like_source(pattern: &str) -> String {
+    format!(
+        "^{}$",
+        regex::escape(pattern).replace('%', ".*").replace('_', ".")
+    )
+}
+
+fn invalid_regex_pattern(pattern: &str, error: &regex::Error) -> StringExtError {
+    StringExtError::InvalidRegexPattern {
+        pattern: pattern.to_owned(),
+        error: error.to_string(),
+    }
+}
+
+fn unreachable_pattern_parsing(_: regex::Error) -> StringExtError {
+    StringExtError::UnreachablePatternParsing
 }
 
 fn match_with_regex(
@@ -188,9 +187,10 @@ mod tests {
     use {
         super::{
             REGEX_CACHE_CAPACITY, RegexCache, StringExt, StringExtError, like_with_cache,
-            regex_with_cache,
+            regex_with_cache, unreachable_pattern_parsing,
         },
         crate::result::Error,
+        regex::Regex,
     };
 
     #[test]
@@ -260,6 +260,17 @@ mod tests {
         }
 
         assert_eq!(cache.len(), REGEX_CACHE_CAPACITY);
+    }
+
+    #[test]
+    fn unreachable_pattern_error_is_stable() {
+        let invalid_pattern = "(".to_owned();
+        let error = Regex::new(&invalid_pattern).unwrap_err();
+
+        assert_eq!(
+            unreachable_pattern_parsing(error),
+            StringExtError::UnreachablePatternParsing
+        );
     }
 
     #[test]
