@@ -27,13 +27,41 @@ SELECT name FROM RegexItem WHERE name ~* '^a|g';
 
 VALUES (1 ~ 'x');
 -- @expect: error Value.RegexOnNonString
+-- @json:
+-- {
+--   "base": {
+--     "I64": 1
+--   },
+--   "operator": "~",
+--   "pattern": {
+--     "Str": "x"
+--   }
+-- }
 
 VALUES (1 !~* 'x');
 -- @expect: error Value.RegexOnNonString
+-- @json:
+-- {
+--   "base": {
+--     "I64": 1
+--   },
+--   "operator": "!~*",
+--   "pattern": {
+--     "Str": "x"
+--   }
+-- }
 
 -- a non-text operand is rejected even when the other side is NULL
 VALUES (1 ~ NULL);
 -- @expect: error Value.RegexOnNonString
+-- @json:
+-- {
+--   "base": {
+--     "I64": 1
+--   },
+--   "operator": "~",
+--   "pattern": "Null"
+-- }
 
 VALUES ('x' ~ '[');
 -- @expect: error StringExt.InvalidRegexPattern
